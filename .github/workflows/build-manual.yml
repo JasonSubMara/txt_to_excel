@@ -1,0 +1,48 @@
+name: Manual Build (No Release)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build application (no release)
+        run: |
+          cd src-tauri
+          cargo build --release --target x86_64-pc-windows-msvc
+          pnpm tauri build --target x86_64-pc-windows-msvc
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.msi
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.exe
+          retention-days: 7
+

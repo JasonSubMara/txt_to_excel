@@ -1,0 +1,59 @@
+name: Build All Platforms
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: ''
+          - platform: 'ubuntu-latest'
+            args: ''
+          - platform: 'windows-latest'
+            args: '--target x86_64-pc-windows-msvc'
+
+    runs-on: ${{ matrix.platform }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'windows-latest' && 'x86_64-pc-windows-msvc' || '' }}
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build application
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: .
+          tagName: ${{ github.ref_name }}
+          releaseName: 'TXT to Excel v__VERSION__'
+          releaseBody: 'See the assets to download and install this version.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
