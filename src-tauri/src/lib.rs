@@ -11,6 +11,18 @@ struct TimeData {
     time_values: HashMap<String, f64>,
 }
 
+// 标准化时间格式：将 "1:00" 转换为 "01:00"
+fn normalize_time(time_str: &str) -> String {
+    let parts: Vec<&str> = time_str.split(':').collect();
+    if parts.len() == 2 {
+        let hour = parts[0].trim();
+        let minute = parts[1].trim();
+        format!("{:0>2}:{:0>2}", hour, minute)
+    } else {
+        time_str.to_string()
+    }
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -23,7 +35,8 @@ fn parse_txt_file(file_path: String) -> Result<Vec<TimeData>, String> {
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
     let date_regex = Regex::new(r"日期[：:]\s*(\d{4}-\d{2}-\d{2})").unwrap();
-    let time_regex = Regex::new(r"(\d{2}:\d{2})\s+(\d+(?:\.\d+)?)").unwrap();
+    // 修改时间正则表达式，允许小时和分钟是一位或两位数：如 "1:00" 或 "01:00"
+    let time_regex = Regex::new(r"(\d{1,2}:\d{1,2})\s+(\d+(?:\.\d+)?)").unwrap();
 
     let mut result = Vec::new();
     let mut current_date: Option<String> = None;
@@ -50,7 +63,9 @@ fn parse_txt_file(file_path: String) -> Result<Vec<TimeData>, String> {
             current_date = Some(caps[1].to_string());
         } else if let Some(caps) = time_regex.captures(line) {
             // 解析时间点数据
-            let time = caps[1].to_string();
+            let time_raw = caps[1].to_string();
+            // 标准化时间格式：将 "1:00" 转换为 "01:00"
+            let time = normalize_time(&time_raw);
             let value: f64 = caps[2]
                 .parse()
                 .map_err(|_| format!("Failed to parse value: {}", &caps[2]))?;
@@ -91,7 +106,9 @@ fn read_excel_template(file_path: String) -> Result<Vec<String>, String> {
                 // 清理可能的格式字符
                 let cleaned = time_str.trim().replace("【", "").replace("】", "");
                 if !cleaned.is_empty() {
-                    time_columns.push(cleaned);
+                    // 标准化时间格式，确保与 TXT 文件中的时间格式一致
+                    let normalized = normalize_time(&cleaned);
+                    time_columns.push(normalized);
                 }
             }
         }
@@ -142,8 +159,16 @@ fn convert_to_excel(
         // 写入时间点数据
         for (col_idx, time_col) in time_columns.iter().enumerate() {
             let excel_col = (col_idx + 1) as u16;
-            if let Some(value) = data.time_values.get(time_col) {
-                worksheet.write_number_with_format(excel_row, excel_col, *value, &number_format)
+            // 尝试直接匹配，如果失败则尝试标准化后匹配
+            let value = data.time_values.get(time_col)
+                .or_else(|| {
+                    // 如果直接匹配失败，尝试标准化时间格式后再匹配
+                    let normalized = normalize_time(time_col);
+                    data.time_values.get(&normalized)
+                });
+            
+            if let Some(&val) = value {
+                worksheet.write_number_with_format(excel_row, excel_col, val, &number_format)
                     .map_err(|e| format!("Failed to write number: {}", e))?;
             }
             // 如果该时间点没有数据，留空（不写入）
